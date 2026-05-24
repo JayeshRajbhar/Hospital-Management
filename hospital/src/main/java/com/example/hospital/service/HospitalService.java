@@ -6,16 +6,19 @@ import com.example.hospital.dto.StaffResponse;
 import com.example.hospital.dto.StatusResponse;
 import com.example.hospital.entity.Doctor;
 import com.example.hospital.entity.Patient;
+import com.example.hospital.entity.Staff;
 import com.example.hospital.repository.DoctorRepository;
 import com.example.hospital.repository.PatientRepository;
-import jakarta.annotation.PostConstruct;
+import com.example.hospital.repository.StaffRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,33 +28,24 @@ public class HospitalService {
 
     private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
+    private final StaffRepository staffRepository;
 
     @Value("${hospital.total-rooms:10}")
     private int totalRooms;
 
-    private final List<RoomSlot> rooms = new ArrayList<>();
-    private final Map<Integer, StaffResponse> staffMap = new LinkedHashMap<>();
-
     public HospitalService(
             PatientRepository patientRepository,
-            DoctorRepository doctorRepository
+            DoctorRepository doctorRepository,
+            StaffRepository staffRepository
     ) {
         this.patientRepository = patientRepository;
         this.doctorRepository = doctorRepository;
-    }
-
-    @PostConstruct
-    public void initRooms() {
-        rooms.clear();
-        for (int roomNumber = 1; roomNumber <= totalRooms; roomNumber += 1) {
-            rooms.add(new RoomSlot(roomNumber));
-        }
+        this.staffRepository = staffRepository;
     }
 
     public List<RoomResponse> getRooms() {
-        return rooms.stream()
-                .map(this::toRoomResponse)
-                .toList();
+        RoomSnapshot snapshot = buildRoomSnapshot();
+        return buildRooms(snapshot.roomAssignments);
     }
 
     public List<Doctor> getDoctors() {
@@ -96,42 +90,44 @@ public class HospitalService {
             );
         }
 
-        RoomSlot emptyRoom = rooms.stream()
-                .filter(room -> room.patient == null)
-                .findFirst()
-                .orElseThrow(() -> new ResponseStatusException(
+                RoomSnapshot snapshot = buildRoomSnapshot();
+                int availableRoom = findFirstAvailableRoom(snapshot.roomAssignments);
+                if (availableRoom < 0) {
+                    throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
                         "No rooms available."
-                ));
+                    );
+                }
 
         request.setAdmitted(true);
-        Patient savedPatient = patientRepository.save(request);
-        emptyRoom.patient = savedPatient;
-
-        return savedPatient;
+                request.setRoomNumber(availableRoom);
+                return patientRepository.save(request);
     }
 
     public void dischargePatient(int patientId) {
-        RoomSlot occupiedRoom = rooms.stream()
-                .filter(room -> room.patient != null && room.patient.getId() == patientId)
-                .findFirst()
-                .orElseThrow(() -> new ResponseStatusException(
+                Patient patient = patientRepository.findById(patientId)
+                    .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Patient not found in occupied rooms."
-                ));
+                    ));
 
-        patientRepository.findById(patientId).ifPresent(patient -> {
-            patient.setAdmitted(false);
-            patientRepository.save(patient);
-        });
+                if (!patient.isAdmitted() || patient.getRoomNumber() == null) {
+                    throw new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Patient not found in occupied rooms."
+                    );
+                }
 
-        occupiedRoom.patient = null;
+                patient.setAdmitted(false);
+                patient.setRoomNumber(null);
+                patientRepository.save(patient);
     }
 
     public List<StaffResponse> getStaff() {
-        return staffMap.values().stream()
-                .sorted(Comparator.comparingInt(StaffResponse::getStaffId))
-                .toList();
+                return staffRepository.findAll().stream()
+                    .sorted(Comparator.comparingInt(Staff::getStaffId))
+                    .map(this::toStaffResponse)
+                    .toList();
     }
 
     public StaffResponse checkInStaff(StaffRequest request) {
@@ -147,9 +143,11 @@ public class HospitalService {
             );
         }
 
-        StaffResponse staff = new StaffResponse(staffId, staffName, true);
-        staffMap.put(staffId, staff);
-        return staff;
+        Staff staff = staffRepository.findById(staffId).orElseGet(Staff::new);
+        staff.setStaffId(staffId);
+        staff.setStaffName(staffName);
+        staff.setCheckedIn(true);
+        return toStaffResponse(staffRepository.save(staff));
     }
 
     public StaffResponse checkOutStaff(int staffId) {
@@ -160,7 +158,7 @@ public class HospitalService {
             );
         }
 
-        StaffResponse staff = staffMap.get(staffId);
+        Staff staff = staffRepository.findById(staffId).orElse(null);
         if (staff == null) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
@@ -169,41 +167,100 @@ public class HospitalService {
         }
 
         staff.setCheckedIn(false);
-        staffMap.put(staffId, staff);
-        return staff;
+        return toStaffResponse(staffRepository.save(staff));
     }
 
     public StatusResponse getStatus() {
-        int occupiedRooms = (int) rooms.stream()
-                .filter(room -> room.patient != null)
-                .count();
-
-        int staffCheckedIn = (int) staffMap.values().stream()
-                .filter(StaffResponse::isCheckedIn)
-                .count();
+        RoomSnapshot snapshot = buildRoomSnapshot();
+        int occupiedRooms = snapshot.roomAssignments.size();
+        int staffCheckedIn = Math.toIntExact(staffRepository.countByCheckedInTrue());
 
         StatusResponse status = new StatusResponse();
-        status.setTotalRooms(rooms.size());
+        status.setTotalRooms(totalRooms);
         status.setOccupiedRooms(occupiedRooms);
         status.setDoctorCount(Math.toIntExact(doctorRepository.count()));
-        status.setPatientCount(occupiedRooms);
+        status.setPatientCount(snapshot.admittedCount);
         status.setStaffCheckedIn(staffCheckedIn);
         status.setOffline(false);
         return status;
     }
 
-    private RoomResponse toRoomResponse(RoomSlot room) {
-        RoomResponse response = new RoomResponse();
-        response.setRoomNumber(room.roomNumber);
-        response.setOccupied(room.patient != null);
+    private RoomSnapshot buildRoomSnapshot() {
+        List<Patient> admittedPatients = patientRepository.findByAdmittedTrue();
+        Map<Integer, Patient> roomAssignments = new LinkedHashMap<>();
+        Deque<Patient> unassignedPatients = new ArrayDeque<>();
 
-        if (room.patient != null) {
-            response.setPatientId(room.patient.getId());
-            response.setPatientName(room.patient.getName());
-            response.setDisease(room.patient.getDisease());
+        for (Patient patient : admittedPatients) {
+            Integer roomNumber = patient.getRoomNumber();
+            if (roomNumber != null
+                    && roomNumber > 0
+                    && roomNumber <= totalRooms
+                    && !roomAssignments.containsKey(roomNumber)) {
+                roomAssignments.put(roomNumber, patient);
+            } else {
+                unassignedPatients.add(patient);
+            }
         }
 
-        return response;
+        List<Patient> updatedPatients = new ArrayList<>();
+        for (int roomNumber = 1; roomNumber <= totalRooms; roomNumber += 1) {
+            if (roomAssignments.containsKey(roomNumber)) {
+                continue;
+            }
+
+            Patient patient = unassignedPatients.poll();
+            if (patient == null) {
+                break;
+            }
+
+            patient.setRoomNumber(roomNumber);
+            patient.setAdmitted(true);
+            roomAssignments.put(roomNumber, patient);
+            updatedPatients.add(patient);
+        }
+
+        if (!updatedPatients.isEmpty()) {
+            patientRepository.saveAll(updatedPatients);
+        }
+
+        return new RoomSnapshot(roomAssignments, admittedPatients.size());
+    }
+
+    private int findFirstAvailableRoom(Map<Integer, Patient> roomAssignments) {
+        for (int roomNumber = 1; roomNumber <= totalRooms; roomNumber += 1) {
+            if (!roomAssignments.containsKey(roomNumber)) {
+                return roomNumber;
+            }
+        }
+        return -1;
+    }
+
+    private List<RoomResponse> buildRooms(Map<Integer, Patient> roomAssignments) {
+        List<RoomResponse> rooms = new ArrayList<>();
+        for (int roomNumber = 1; roomNumber <= totalRooms; roomNumber += 1) {
+            RoomResponse response = new RoomResponse();
+            response.setRoomNumber(roomNumber);
+
+            Patient patient = roomAssignments.get(roomNumber);
+            response.setOccupied(patient != null);
+            if (patient != null) {
+                response.setPatientId(patient.getId());
+                response.setPatientName(patient.getName());
+                response.setDisease(patient.getDisease());
+            }
+
+            rooms.add(response);
+        }
+
+        return rooms;
+    }
+
+    private StaffResponse toStaffResponse(Staff staff) {
+        return new StaffResponse(
+                staff.getStaffId(),
+                staff.getStaffName(),
+                staff.isCheckedIn()
+        );
     }
 
     private void validateDoctor(Doctor doctor) {
@@ -232,12 +289,13 @@ public class HospitalService {
         }
     }
 
-    private static class RoomSlot {
-        private final int roomNumber;
-        private Patient patient;
+    private static class RoomSnapshot {
+        private final Map<Integer, Patient> roomAssignments;
+        private final int admittedCount;
 
-        private RoomSlot(int roomNumber) {
-            this.roomNumber = roomNumber;
+        private RoomSnapshot(Map<Integer, Patient> roomAssignments, int admittedCount) {
+            this.roomAssignments = roomAssignments;
+            this.admittedCount = admittedCount;
         }
     }
 }

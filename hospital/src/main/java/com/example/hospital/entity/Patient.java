@@ -15,6 +15,8 @@ public class Patient {
 
     private boolean admitted;
 
+    private Integer roomNumber;
+
     public Patient() {
     }
 
@@ -48,5 +50,13 @@ public class Patient {
 
     public void setAdmitted(boolean admitted) {
         this.admitted = admitted;
+    }
+
+    public Integer getRoomNumber() {
+        return roomNumber;
+    }
+
+    public void setRoomNumber(Integer roomNumber) {
+        this.roomNumber = roomNumber;
     }
 }
