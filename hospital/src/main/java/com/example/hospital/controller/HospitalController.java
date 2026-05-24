@@ -1,13 +1,8 @@
 package com.example.hospital.controller;
 
-import com.example.hospital.dto.AvailabilityRequest;
-import com.example.hospital.dto.RoomResponse;
-import com.example.hospital.dto.StaffRequest;
-import com.example.hospital.dto.StaffResponse;
-import com.example.hospital.dto.StatusResponse;
-import com.example.hospital.entity.Doctor;
-import com.example.hospital.entity.Patient;
-import com.example.hospital.service.HospitalService;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,8 +15,14 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-import java.util.Map;
+import com.example.hospital.dto.AvailabilityRequest;
+import com.example.hospital.dto.RoomResponse;
+import com.example.hospital.dto.StaffRequest;
+import com.example.hospital.dto.StaffResponse;
+import com.example.hospital.dto.StatusResponse;
+import com.example.hospital.entity.Doctor;
+import com.example.hospital.entity.Patient;
+import com.example.hospital.service.HospitalService;
 
 @RestController
 @RequestMapping("/api")
