@@ -1,7 +1,8 @@
 package com.example.hospital.repository;
 
-import com.example.hospital.entity.Staff;
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.example.hospital.entity.Staff;
 
 public interface StaffRepository extends JpaRepository<Staff, Integer> {
 

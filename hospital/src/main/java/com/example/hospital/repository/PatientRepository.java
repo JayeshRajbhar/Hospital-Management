@@ -1,15 +1,15 @@
 package com.example.hospital.repository;
 
-import com.example.hospital.entity.Patient;
+import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.util.List;
+import com.example.hospital.entity.Patient;
 
 public interface PatientRepository
         extends JpaRepository<Patient, Integer> {
 
-        List<Patient> findByAdmittedTrue();
+    List<Patient> findByAdmittedTrue();
 
-        long countByAdmittedTrue();
+    long countByAdmittedTrue();
 }

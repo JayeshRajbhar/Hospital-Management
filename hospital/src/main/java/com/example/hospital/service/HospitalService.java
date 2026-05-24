@@ -1,5 +1,18 @@
 package com.example.hospital.service;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
 import com.example.hospital.dto.RoomResponse;
 import com.example.hospital.dto.StaffRequest;
 import com.example.hospital.dto.StaffResponse;
@@ -10,18 +23,6 @@ import com.example.hospital.entity.Staff;
 import com.example.hospital.repository.DoctorRepository;
 import com.example.hospital.repository.PatientRepository;
 import com.example.hospital.repository.StaffRepository;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Deque;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
 @Service
 public class HospitalService {
@@ -72,9 +73,9 @@ public class HospitalService {
     public Doctor setDoctorAvailability(int doctorId, boolean available) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Doctor not found."
-                ));
+                HttpStatus.NOT_FOUND,
+                "Doctor not found."
+        ));
 
         doctor.setAvailable(available);
         return doctorRepository.save(doctor);
@@ -90,44 +91,44 @@ public class HospitalService {
             );
         }
 
-                RoomSnapshot snapshot = buildRoomSnapshot();
-                int availableRoom = findFirstAvailableRoom(snapshot.roomAssignments);
-                if (availableRoom < 0) {
-                    throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "No rooms available."
-                    );
-                }
+        RoomSnapshot snapshot = buildRoomSnapshot();
+        int availableRoom = findFirstAvailableRoom(snapshot.roomAssignments);
+        if (availableRoom < 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "No rooms available."
+            );
+        }
 
         request.setAdmitted(true);
-                request.setRoomNumber(availableRoom);
-                return patientRepository.save(request);
+        request.setRoomNumber(availableRoom);
+        return patientRepository.save(request);
     }
 
     public void dischargePatient(int patientId) {
-                Patient patient = patientRepository.findById(patientId)
-                    .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Patient not found in occupied rooms."
-                    ));
+        Patient patient = patientRepository.findById(patientId)
+                .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Patient not found in occupied rooms."
+        ));
 
-                if (!patient.isAdmitted() || patient.getRoomNumber() == null) {
-                    throw new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Patient not found in occupied rooms."
-                    );
-                }
+        if (!patient.isAdmitted() || patient.getRoomNumber() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Patient not found in occupied rooms."
+            );
+        }
 
-                patient.setAdmitted(false);
-                patient.setRoomNumber(null);
-                patientRepository.save(patient);
+        patient.setAdmitted(false);
+        patient.setRoomNumber(null);
+        patientRepository.save(patient);
     }
 
     public List<StaffResponse> getStaff() {
-                return staffRepository.findAll().stream()
-                    .sorted(Comparator.comparingInt(Staff::getStaffId))
-                    .map(this::toStaffResponse)
-                    .toList();
+        return staffRepository.findAll().stream()
+                .sorted(Comparator.comparingInt(Staff::getStaffId))
+                .map(this::toStaffResponse)
+                .toList();
     }
 
     public StaffResponse checkInStaff(StaffRequest request) {
@@ -290,6 +291,7 @@ public class HospitalService {
     }
 
     private static class RoomSnapshot {
+
         private final Map<Integer, Patient> roomAssignments;
         private final int admittedCount;
 
