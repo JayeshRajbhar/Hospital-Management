@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getAuthUsername, getAuthToken, clearAuthToken } from "../../lib/auth";
 import {
   addDoctor as addDoctorApi,
   admitPatient as admitPatientApi,
@@ -9,6 +11,8 @@ import {
   dischargePatient as dischargePatientApi,
   refreshHospitalSnapshot,
   toggleDoctorAvailability as toggleDoctorAvailabilityApi,
+  logout as logoutApi,
+  deleteAccount as deleteAccountApi,
 } from "../../lib/api";
 
 const HospitalContext = createContext(null);
@@ -134,10 +138,10 @@ function errorMessage(error, fallback) {
 }
 
 export function HospitalProvider({
-  initialStatus,
-  initialRooms,
-  initialDoctors,
-  initialStaff,
+  initialStatus = null,
+  initialRooms = [],
+  initialDoctors = [],
+  initialStaff = [],
   children,
 }) {
   const seededState = useMemo(
@@ -157,6 +161,7 @@ export function HospitalProvider({
   const [staff, setStaff] = useState(seededState.staff);
   const [isBusy, setIsBusy] = useState(false);
   const [backendOnline, setBackendOnline] = useState(initialStatus?.offline !== true);
+  const [username, setUsername] = useState(null);
   const [notice, setNotice] = useState(
     initialStatus?.offline
       ? {
@@ -165,6 +170,29 @@ export function HospitalProvider({
         }
       : null
   );
+
+  const router = useRouter();
+
+  useEffect(() => {
+    async function initAuthAndData() {
+      const activeUser = await getAuthUsername();
+      setUsername(activeUser);
+
+      const token = await getAuthToken();
+      if (token) {
+        setIsBusy(true);
+        try {
+          await syncFromBackend();
+        } catch (err) {
+          console.error("Failed to sync backend data", err);
+          setBackendOnline(false);
+        } finally {
+          setIsBusy(false);
+        }
+      }
+    }
+    initAuthAndData();
+  }, []);
 
   const patients = useMemo(
     () => rooms.map((room) => room.patient).filter(Boolean),
@@ -395,6 +423,36 @@ export function HospitalProvider({
     return { ok: true, message: `Staff #${resolvedStaffId} checked out.` };
   }
 
+  async function logout() {
+    setIsBusy(true);
+    try {
+      await logoutApi();
+    } catch (error) {
+      console.error("Logout request failed", error);
+    } finally {
+      await clearAuthToken();
+      setUsername(null);
+      setIsBusy(false);
+      router.push("/login");
+    }
+  }
+
+  async function deleteAccount() {
+    setIsBusy(true);
+    try {
+      const response = await deleteAccountApi();
+      pushNotice("success", response?.message || "Account deleted successfully.");
+    } catch (error) {
+      console.error("Account deletion failed", error);
+      pushNotice("error", error?.message || "Failed to delete account.");
+    } finally {
+      await clearAuthToken();
+      setUsername(null);
+      setIsBusy(false);
+      router.push("/signup");
+    }
+  }
+
   const value = {
     rooms,
     doctors,
@@ -404,6 +462,7 @@ export function HospitalProvider({
     notice,
     isBusy,
     backendOnline,
+    username,
     clearNotice,
     pushNotice,
     actions: {
@@ -414,6 +473,8 @@ export function HospitalProvider({
       checkInStaff,
       checkOutStaff,
       syncFromBackend,
+      logout,
+      deleteAccount,
     },
   };
 

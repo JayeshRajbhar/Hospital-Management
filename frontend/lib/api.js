@@ -1,3 +1,5 @@
+import { getAuthToken } from "./auth";
+
 const API_BASE =
   process.env.API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -37,9 +39,18 @@ function interpolatePath(path, replacements) {
 }
 
 async function request(path, options = {}) {
+  const token = await getAuthToken();
+  const headers = {
+    ...options.headers,
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(buildUrl(path), {
     cache: "no-store",
     ...options,
+    headers,
   });
 
   const contentType = response.headers.get("content-type") || "";
@@ -154,5 +165,37 @@ export async function checkOutStaff(staffId) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
+  });
+}
+
+export async function login(username, password) {
+  return request("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function signup(username, password) {
+  return request("/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function logout() {
+  try {
+    await request("/api/auth/logout", {
+      method: "POST",
+    });
+  } catch (error) {
+    console.error("Logout request failed", error);
+  }
+}
+
+export async function deleteAccount() {
+  return request("/api/auth/delete", {
+    method: "DELETE",
   });
 }
