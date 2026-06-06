@@ -7,6 +7,6 @@ services:
       - key: SUPABASE_DB_PASSWORD
         sync: false
       - key: SPRING_DATASOURCE_URL
-        value: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:6543/postgres
+        value: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require
       - key: SPRING_DATASOURCE_USERNAME
         value: postgres.bpkpkpmvovzhvtxgnocj
